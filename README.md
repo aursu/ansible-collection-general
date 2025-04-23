@@ -156,3 +156,14 @@ The module supports the full range of units accepted by LVM's `--units` option:
 
 Lowercase = base-2 (binary), uppercase = base-10 (decimal).  
 Custom units (e.g. `--units 3M`) are also accepted by LVM but are not supported in this module at this time.
+
+# Publish an Ansible Content Collectio
+
+A brief [procedure on how to publish an Ansible Content Collection](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections):
+
+1.  **Create an Ansible Galaxy account:** If you don't have one, you'll need to create an account. Ansible Galaxy uses GitHub for authentication.
+2.  **Create a new collection:** Use the `ansible-galaxy collection init` command to create a new collection skeleton.
+3.  **Prepare the collection:** Update the `galaxy.yml` file with metadata and the `meta/runtime.yml` file to configure compatible Ansible Core versions.
+4.  **Build the collection artifact:** Use the `ansible-galaxy collection build` command to create a `.tar.gz` archive.
+5.  **Create an Ansible Galaxy API token:** You'll need this to publish collections.
+6.  **Publish the collection:** Use the `ansible-galaxy collection publish` command, authenticating with the API token.
