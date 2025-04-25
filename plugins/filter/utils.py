@@ -6,7 +6,8 @@ DOCUMENTATION = r"""
 name: utils
 short_description: Attribute comparison filters for lists of dictionaries
 version_added: 1.1.0
-author: Alex
+author:
+  - Alexander Ursu (@aursu)
 description:
   - Provides filters to compare attribute values across a list of dictionaries.
   - Useful in validating uniformity or detecting inconsistencies in structured data like inventory, facts, or custom inputs.
@@ -20,9 +21,9 @@ options:
 
 RETURN = r"""
 _value:
-  description: Boolean value depending on the filter used:
-               - C(all_attr_equals) returns True if all dictionaries have the same value for a given attribute.
-               - C(any_attr_not) returns True if any dictionary has a different value than expected.
+  description:
+    - C(all_attr_equals) returns True if all dictionaries have the same value for a given attribute.
+    - C(any_attr_not) returns True if any dictionary has a different value than expected.
   type: bool
 """
 
