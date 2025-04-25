@@ -159,11 +159,44 @@ Custom units (e.g. `--units 3M`) are also accepted by LVM but are not supported 
 
 # Publish an Ansible Content Collection
 
-A brief [procedure on how to publish an Ansible Content Collection](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections):
+A step-by-step guide to publishing an Ansible Content Collection, based on the official Red Hat documentation: [Creating and publishing Ansible Content Collections](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections)
 
-1.  **Create an Ansible Galaxy account:** If you don't have one, you'll need to create an account. Ansible Galaxy uses GitHub for authentication.
-2.  **Create a new collection:** Use the `ansible-galaxy collection init` command to create a new collection skeleton.
-3.  **Prepare the collection:** Update the `galaxy.yml` file with metadata and the `meta/runtime.yml` file to configure compatible Ansible Core versions.
-4.  **Build the collection artifact:** Use the `ansible-galaxy collection build` command to create a `.tar.gz` archive.
-5.  **Create an Ansible Galaxy API token:** You'll need this to publish collections.
-6.  **Publish the collection:** Use the `ansible-galaxy collection publish` command, authenticating with the API token.
+### Steps:
+
+1. **Create an Ansible Galaxy account**  
+   If you don’t have one yet, go to [https://galaxy.ansible.com](https://galaxy.ansible.com) and sign up. Galaxy uses GitHub for authentication.
+
+2. **Initialize a new collection**  
+   Use the command:
+   ```bash
+   ansible-galaxy collection init <namespace>-<collection_name>
+   ```
+
+3. **Configure the collection**  
+   - Edit `galaxy.yml` to define metadata (namespace, name, version, etc.).
+   - Optionally, set `meta/runtime.yml` to define supported Ansible Core versions.
+
+4. **Build the collection artifact**  
+   Create a distributable archive:
+   ```bash
+   ansible-galaxy collection build
+   ```
+   This will generate a `.tar.gz` file like `aursu-general-1.2.0.tar.gz`.
+
+5. **Create an Ansible Galaxy API token**  
+   Go to your Galaxy user settings and generate an API token. Save it in a file:
+   ```bash
+   echo "your_token_here" > ~/.ansible/galaxy_token
+   ```
+
+6. **Publish the collection (important!)**  
+   To publish, **you must explicitly use the `--api-key` option**.  
+   The presence of `~/.ansible/galaxy_token` alone **does not work**, and will result in a 401 error:
+   ```
+   ERROR! Error when publishing collection to default (https://galaxy.ansible.com/api/) (HTTP Code: 401, Message: Authentication credentials were not provided. Code: not_authenticated)
+   ```
+
+   The only working command:
+   ```bash
+   ansible-galaxy collection publish aursu-general-1.2.0.tar.gz --api-key $(cat ~/.ansible/galaxy_token)
+   ```
