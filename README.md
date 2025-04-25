@@ -157,7 +157,7 @@ The module supports the full range of units accepted by LVM's `--units` option:
 Lowercase = base-2 (binary), uppercase = base-10 (decimal).  
 Custom units (e.g. `--units 3M`) are also accepted by LVM but are not supported in this module at this time.
 
-# Publish an Ansible Content Collectio
+# Publish an Ansible Content Collection
 
 A brief [procedure on how to publish an Ansible Content Collection](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections):
 
