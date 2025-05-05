@@ -157,6 +157,40 @@ The module supports the full range of units accepted by LVM's `--units` option:
 Lowercase = base-2 (binary), uppercase = base-10 (decimal).  
 Custom units (e.g. `--units 3M`) are also accepted by LVM but are not supported in this module at this time.
 
+## aursu.general.dev_info
+
+This module gathers information about a file system object such as a block device, regular file, socket, FIFO, or symbolic link.
+It uses the following sources:
+- `os.stat` for file metadata
+- `blkid --output export` for block device attributes (if applicable)
+- `findmnt -J` for mount information (if applicable)
+
+### Parameters
+
+| Name | Required | Type | Description |
+|------|----------|------|-------------|
+| dev  | yes      | path | Path to the file system object. Aliases: `device`. |
+
+### Return values
+
+| Key        | Type   | Description |
+|------------|--------|-------------|
+| is_exists  | bool   | Whether the path exists. |
+| stat       | dict   | POSIX stat(2) fields like `mode`, `uid`, `size`, etc. |
+| stat.error | string | Present only if `os.stat()` failed. |
+| filetype   | string | File type in `ls -l` style: `b`, `c`, `d`, `-`, `l`, `p`, `s`. |
+| blkid      | dict   | Key-value output from `blkid --output export` (only for block devices). |
+| mount      | dict   | Mount point info from `findmnt -J` (only for block devices). |
+
+### Example
+
+```yaml
+- name: Gather info about /dev/sdb1
+  aursu.general.dev_info:
+    dev: /dev/sdb1
+  register: dev_info
+```
+
 # Publish an Ansible Content Collection
 
 A step-by-step guide to publishing an Ansible Content Collection, based on the official Red Hat documentation: [Creating and publishing Ansible Content Collections](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections)
