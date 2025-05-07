@@ -22,11 +22,12 @@ description:
 options:
   filter:
     description:
-      - The type of LVM object to retrieve.
-      - Must be one of C(pvs), C(vgs), or C(lvs).
-    type: str
-    choices: ["pvs", "vgs", "lvs"]
+      - The type(s) of LVM object to retrieve.
+      - Can be a single value or a comma-separated list of values.
+      - Special value C(all) is equivalent to C(pvs,vgs,lvs).
+    type: raw
     default: "pvs"
+    choices: ["pvs", "vgs", "lvs", "all"]
   unit:
     description:
       - Unit to use when reporting sizes, passed as C(--units) to LVM tools.
@@ -61,11 +62,24 @@ EXAMPLES = r"""
 - name: Show all PV device paths
   debug:
     var: lvm_pvs.lvm.pvs | map(attribute='pv') | list
+
+- name: Get all LVM information
+  aursu.general.lvm_info:
+    filter: all
+  register: lvm_info
+
+- name: Get volume groups and logical volumes
+  aursu.general.lvm_info:
+    filter: vgs,lvs
+  register: lvm_info
 """
 
 RETURN = r"""
 pv:
-  description: List of physical volumes with details. This list is populated only when the 'filter' parameter is set to 'pvs' or not set at all.
+  description: >
+    List of physical volumes with details.
+    This list is populated only when the 'filter' parameter is set to 'pvs' or not set at all.
+    This list is also populated when the 'filter' parameter includes this type or is set to 'all'.
   returned: always
   type: list
   elements: dict
@@ -78,7 +92,10 @@ pv:
       pv_free: "158.49g"
 
 vg:
-  description: List of volume groups with summary attributes. This list is populated only when the 'filter' parameter is set to 'vgs'.
+  description: >
+    List of volume groups with summary attributes.
+    This list is populated only when the 'filter' parameter is set to 'vgs'.
+    This list is also populated when the 'filter' parameter includes this type or is set to 'all'.
   returned: always
   type: list
   elements: dict
@@ -92,7 +109,10 @@ vg:
       vg_free: "158.49g"
 
 lv:
-  description: List of logical volumes with detailed attributes. This list is populated only when the 'filter' parameter is set to 'lvs'.
+  description: >
+    List of logical volumes with detailed attributes.
+    This list is populated only when the 'filter' parameter is set to 'lvs'.
+    This list is also populated when the 'filter' parameter includes this type or is set to 'all'.
   returned: always
   type: list
   elements: dict
@@ -160,22 +180,34 @@ def main():
     module = AnsibleModule(
         argument_spec=dict(
             unit=dict(type='str', default='m', choices=lvm_units),
-            filter=dict(type='str', default='pvs', choices=['pvs', 'vgs', 'lvs']),
+            filter=dict(type='raw', default='pvs'),
         ),
         supports_check_mode=True
     )
     module.run_command_environ_update = {'LANG': 'C', 'LC_ALL': 'C', 'LC_MESSAGES': 'C', 'LC_CTYPE': 'C'}
 
     unit = module.params['unit']
-    lvm_scope = module.params['filter']
+    raw_filter = module.params['filter']
 
-    # LVM executable
-    lvm_exec = module.get_bin_path(lvm_scope, required=True)
+    if isinstance(raw_filter, str):
+        if raw_filter == 'all':
+            lvm_scopes = ['pvs', 'vgs', 'lvs']
+        else:
+            lvm_scopes = [s.strip() for s in raw_filter.split(',')]
+    elif isinstance(raw_filter, list):
+        lvm_scopes = raw_filter
+    else:
+        module.fail_json(msg="Invalid filter type, must be string or list")
 
-    # status of the LVM
-    report = get_lvm_status(module, lvm_exec, unit)
+    valid_scopes = {'pvs', 'vgs', 'lvs'}
+    if not set(lvm_scopes).issubset(valid_scopes):
+        module.fail_json(msg=f"Unsupported filter value(s): {lvm_scopes}")
 
-    result = {**dict(pv=[], vg=[], lv=[]), **report}
+    result = {'pv': [], 'vg': [], 'lv': []}
+    for scope in lvm_scopes:
+        lvm_exec = module.get_bin_path(scope, required=True)
+        report = get_lvm_status(module, lvm_exec, unit)
+        result.update({k: v for k, v in report.items() if k in ['pv', 'vg', 'lv']})
 
     module.exit_json(changed=False, **result)
 
