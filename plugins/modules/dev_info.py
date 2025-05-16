@@ -120,22 +120,24 @@ from ansible.module_utils.basic import AnsibleModule
 
 def run_findmnt(module, dev=None):
     rc, out, _ = module.run_command(['findmnt', '-J'])
+
+    result = []
     if rc != 0:
-        return None
+        return [{"rc": rc, "out": out}]
 
     try:
         data = json.loads(out)
     except Exception:
-        return None
+        return [{"rc": rc, "out": out, "json": False}]
 
     if dev is None:
         return data
 
     for entry in data.get('filesystems', []):
         if entry.get('source') == dev:
-            return entry
+            result.append(entry)
 
-    return None
+    return result
 
 def run_blkid(module, dev):
     rc, out, _ = module.run_command(['blkid', '--output', 'export', dev])
