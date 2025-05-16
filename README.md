@@ -234,3 +234,161 @@ A step-by-step guide to publishing an Ansible Content Collection, based on the o
    ```bash
    ansible-galaxy collection publish aursu-general-1.2.0.tar.gz --api-key $(cat ~/.ansible/galaxy_token)
    ```
+
+# Debug on target host
+
+### Clean Up Ansible Temporary Files on the Target Host
+
+Before debugging an Ansible module manually, it's recommended to clear the temporary files left from previous runs. This ensures a clean environment and avoids conflicts.
+
+Suppose the Ansible control node connects to the target host `node01.example.net` using the user `deployuser`. Then, on the **target host**, run:
+
+```bash
+ssh deployuser@node01.example.net
+rm -rf /home/deployuser/.ansible/tmp/*
+```
+
+> Note: Even if Ansible escalates privileges using `become: true` (e.g. to `root`), the temporary files are located in the home directory of the SSH user (`deployuser`), not under `/root`.
+
+### Create a Minimal Playbook to Debug the Module
+
+To isolate and debug a specific Ansible module, create a minimal playbook that contains only the module call and the input data you want to test.
+
+Suppose you want to debug the custom module `aursu.general.dev_info` with the device `/dev/mapper/data-data1`. Your playbook may look like this:
+
+```yaml
+# playbooks/dev_info_debug.yml
+- name: Run single task for module debugging
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Get device info for /dev/mapper/data-data1
+      aursu.general.dev_info:
+        dev: /dev/mapper/data-data1
+      register: dev_mapper_info
+```
+
+> Note:
+>
+> * Make sure to provide **actual input values**, not Jinja2 variables unless needed.
+> * This playbook should be kept as simple as possible to focus on module behavior.
+
+### Run the Playbook with `ANSIBLE_KEEP_REMOTE_FILES=1` to Preserve Module Files
+
+To debug a module manually, you need to preserve the temporary files that Ansible uploads to the target host during execution. This can be done by setting the environment variable `ANSIBLE_KEEP_REMOTE_FILES=1`.
+
+Suppose your inventory group or host is named `kubernetes_ce`. Then run the playbook like this:
+
+```bash
+ANSIBLE_KEEP_REMOTE_FILES=1 ansible-playbook playbooks/dev_info_debug.yml --limit kubernetes_ce -vvv
+```
+
+> The `-vvv` option is important — it enables verbose output that will show the exact module path and the command Ansible runs on the target.
+
+> Be sure to run this command from the Ansible control node (your workstation or CI environment).
+
+
+### Locate the Module File on the Target Host
+
+In the verbose output from `ansible-playbook -vvv`, look for a line that shows the full command Ansible runs on the target host. This line includes the path to the temporary Python module wrapper used during execution.
+
+Example (simplified):
+
+```text
+<node01.example.net> EXEC ssh -o User="deployuser" node01.example.net '/usr/bin/python3.12 /home/deployuser/.ansible/tmp/ansible-tmp-XXXXXXXXXX-XXXX-XXXXXXXXXXXXXX/AnsiballZ_dev_info.py'
+```
+
+From this output you can extract:
+
+* **Python interpreter**: `/usr/bin/python3.12`
+* **Module path**: `/home/deployuser/.ansible/tmp/ansible-tmp-.../AnsiballZ_dev_info.py`
+
+> This is the script you will execute manually for debugging in the next step.
+
+### Unpack the Module on the Target Host
+
+To inspect the contents of the Ansible module and debug it manually, you need to **unpack** the `AnsiballZ_*.py` wrapper file on the target host.
+
+Use the `explode` argument to extract its contents:
+
+```bash
+/usr/bin/python3.12 /home/deployuser/.ansible/tmp/ansible-tmp-XXXXXXXXXX-XXXX-XXXXXXXXXXXXXX/AnsiballZ_dev_info.py explode
+```
+
+Example:
+
+```bash
+/usr/bin/python3.12 /home/deployuser/.ansible/tmp/ansible-tmp-1747438014.5293243-5508-26587107288771/AnsiballZ_dev_info.py explode
+```
+
+After running the command, you'll see output like:
+
+```text
+Module expanded into:
+/home/deployuser/.ansible/tmp/ansible-tmp-1747438014.5293243-5508-26587107288771/debug_dir
+```
+
+Inside `debug_dir` you’ll find:
+
+* The actual module code (e.g. `dev_info.py`)
+* A JSON file with arguments (`args`)
+* Supporting Ansible files (`__main__.py`, etc.)
+
+> **This unpacked directory is where you can run or modify the module code directly for debugging purposes.**
+
+### Locate and Modify the Actual Module Code
+
+After unpacking the module, you can now inspect and modify the actual Python source file.
+
+Inside the extracted `debug_dir`, the module is located in the standard Ansible Collection path:
+
+```text
+debug_dir/ansible_collections/<namespace>/<collection>/plugins/modules/<module>.py
+```
+
+For example:
+
+```bash
+/home/deployuser/.ansible/tmp/ansible-tmp-XXXXXXXXXX-XXXX-XXXXXXXXXXXXXX/debug_dir/ansible_collections/aursu/general/plugins/modules/dev_info.py
+```
+
+Check it:
+
+```bash
+ls -la /home/deployuser/.ansible/tmp/ansible-tmp-XXXXXXXXXX/debug_dir/ansible_collections/aursu/general/plugins/modules/dev_info.py
+```
+
+Output might look like:
+
+```text
+-rw-r--r-- 1 root root 5889 May 16 23:27 /home/deployuser/.ansible/tmp/.../dev_info.py
+```
+
+Now you can open the file and insert any debug logic you need, such as:
+
+```python
+print("DEBUG: received parameters:", module.params)
+```
+
+> These `print()` statements will show up in the module's stdout when you run it manually (in the next step).
+
+### Run the Module Manually with `execute` to Test Changes
+
+After making your modifications (e.g., adding debug output via `print()`), you can manually execute the unpacked module using the `execute` argument:
+
+```bash
+/usr/bin/python3.12 /home/deployuser/.ansible/tmp/ansible-tmp-XXXXXXXXXX-XXXX-XXXXXXXXXXXXXX/AnsiballZ_dev_info.py execute
+```
+
+Example output:
+
+```text
+DEBUG: received parameters: {'dev': '/dev/mapper/data-data1'}
+
+{"changed": false, "is_exists": true, "stat": {...}, "filetype": "b", "blkid": {...}, "invocation": {"module_args": {"dev": "/dev/mapper/data-data1"}}}
+```
+
+> This runs the module exactly as Ansible would, but now with your custom debug statements printed to the console.
+
+> You can now iteratively modify the module source, re-run it with `execute`, and observe the results — no need to re-run the playbook each time.
