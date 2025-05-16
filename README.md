@@ -191,49 +191,95 @@ It uses the following sources:
   register: dev_info
 ```
 
-# Publish an Ansible Content Collection
+# How to Publish an Ansible Content Collection
 
-A step-by-step guide to publishing an Ansible Content Collection, based on the official Red Hat documentation: [Creating and publishing Ansible Content Collections](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections)
+This is a step-by-step guide to creating and publishing an Ansible Content Collection. It follows the official Red Hat documentation:
+[Creating and publishing Ansible Content Collections](https://developers.redhat.com/learning/learn:ansible:getting-started-ansible-content-collections/resource/resources:creating-and-publishing-ansible-content-collections)
 
-### Steps:
+---
 
-1. **Create an Ansible Galaxy account**  
-   If you don’t have one yet, go to [https://galaxy.ansible.com](https://galaxy.ansible.com) and sign up. Galaxy uses GitHub for authentication.
+## Steps
 
-2. **Initialize a new collection**  
-   Use the command:
-   ```bash
-   ansible-galaxy collection init <namespace>-<collection_name>
-   ```
+### 1. **Create an Ansible Galaxy Account**
 
-3. **Configure the collection**  
-   - Edit `galaxy.yml` to define metadata (namespace, name, version, etc.).
-   - Optionally, set `meta/runtime.yml` to define supported Ansible Core versions.
+If you don’t already have one, visit [https://galaxy.ansible.com](https://galaxy.ansible.com) and sign up.
 
-4. **Build the collection artifact**  
-   Create a distributable archive:
-   ```bash
-   ansible-galaxy collection build
-   ```
-   This will generate a `.tar.gz` file like `aursu-general-1.2.0.tar.gz`.
+> Ansible Galaxy uses GitHub for authentication.
 
-5. **Create an Ansible Galaxy API token**  
-   Go to your Galaxy user settings and generate an API token. Save it in a file:
-   ```bash
-   echo "your_token_here" > ~/.ansible/galaxy_token
-   ```
+---
 
-6. **Publish the collection (important!)**  
-   To publish, **you must explicitly use the `--api-key` option**.  
-   The presence of `~/.ansible/galaxy_token` alone **does not work**, and will result in a 401 error:
-   ```
-   ERROR! Error when publishing collection to default (https://galaxy.ansible.com/api/) (HTTP Code: 401, Message: Authentication credentials were not provided. Code: not_authenticated)
-   ```
+### 2. **Initialize a New Collection**
 
-   The only working command:
-   ```bash
-   ansible-galaxy collection publish aursu-general-1.2.0.tar.gz --api-key $(cat ~/.ansible/galaxy_token)
-   ```
+Run the following command to scaffold a new collection:
+
+```bash
+ansible-galaxy collection init <namespace>-<collection_name>
+```
+
+This will generate a standard directory structure, e.g. `aursu-general/`.
+
+---
+
+### 3. **Configure Metadata**
+
+Edit the following files:
+
+* `galaxy.yml`: Set metadata like `namespace`, `name`, `version`, `authors`, and `description`.
+* `meta/runtime.yml`: (Optional) Define supported Ansible Core versions.
+
+---
+
+### 4. **Build the Collection**
+
+Use the build command to generate a `.tar.gz` archive:
+
+```bash
+ansible-galaxy collection build
+```
+
+The output will be something like:
+
+```
+aursu-general-1.2.0.tar.gz
+```
+
+---
+
+### 5. **Generate an API Token**
+
+Go to your Galaxy user settings → **"API tokens"** and create a new token. Save it locally:
+
+```bash
+echo "your_token_here" > ~/.ansible/galaxy_token
+```
+
+> This file is used only to **store** the token. It is not picked up automatically during publishing.
+
+---
+
+### 6. **Publish the Collection**
+
+Use the following command to publish the archive:
+
+```bash
+ansible-galaxy collection publish aursu-general-1.2.0.tar.gz --api-key $(cat ~/.ansible/galaxy_token)
+```
+
+> Do **not** rely on `~/.ansible/galaxy_token` alone. Without explicitly passing `--api-key`, the command will fail with:
+
+```
+ERROR! Error when publishing collection to default (https://galaxy.ansible.com/api/) (HTTP Code: 401, Message: Authentication credentials were not provided. Code: not_authenticated)
+```
+
+---
+
+### 7. **Install or Upgrade the Collection**
+
+Once published, you can install or update the collection locally with:
+
+```bash
+ansible-galaxy collection install aursu.general --upgrade
+```
 
 # Debugging a Custom Ansible Module on the Target Host
 
