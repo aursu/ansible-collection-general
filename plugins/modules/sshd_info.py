@@ -74,7 +74,6 @@ class OptionStore:
         """
         if self.location is None:
             self.location = filepath
-
         if filepath not in self.appearance:
             self.appearance.append(filepath)
 
@@ -139,8 +138,12 @@ class SshConfigParser:
 
         abs_path = os.path.abspath(filepath)
 
+        # Loop protection (stack-based)
         if abs_path in call_stack:
             return
+
+        # FIXED: Removed 'self.processed_files' check.
+        # Files MUST be re-parsed if they are included in different contexts/scopes.
 
         if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
             return
@@ -223,7 +226,7 @@ class SshConfigParser:
             # Convert store to dictionary format
             match_list.append(store.to_dict())
 
-        # 3. Include Match blocks in result if any exist
+        # Include Match blocks in result if any exist
         if match_list:
             result["Match"] = match_list
 
