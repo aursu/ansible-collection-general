@@ -55,76 +55,61 @@ import glob
 import shlex
 from ansible.module_utils.basic import AnsibleModule
 
-class SshOptionRegistry:
+class OptionStore:
     """
-    Responsibility: Store configuration options and implement 'First Match Wins' logic.
-    Acts as a repository for parsed settings.
+    Stores options for a specific scope (Global or a particular Match condition).
+    Implements 'First Match Wins' logic.
     """
-    def __init__(self, scope="global"):
-        self.scope = scope
-        # Internal storage: { 'lowercase_key': { 'name': Str, 'value': Str, ... } }
-        self._storage = {}
+    def __init__(self):
+        # Data structure: { 'lower_key': { 'name': 'RealKey', 'value': '...', ... } }
+        self._data = {}
 
-    def register(self, key, value, filepath):
-        """
-        Registers an option found in a config file.
-        If the option is new, it's the effective value.
-        If it exists, we just append the filepath to appearance list.
-        """
-        normalized_key = key.lower()
-
-        if normalized_key not in self._storage:
-            # First time seeing this option -> It is the EFFECTIVE value
-            self._storage[normalized_key] = {
+    def add(self, key, value, filepath):
+        k_lower = key.lower()
+        if k_lower not in self._data:
+            # First occurrence of the option becomes the effective value
+            self._data[k_lower] = {
                 'name': key,
                 'value': value,
                 'location': filepath,
                 'appearance': [filepath]
             }
         else:
-            # Option already defined previously -> Just log the occurrence
-            entry = self._storage[normalized_key]
-            if filepath not in entry['appearance']:
-                entry['appearance'].append(filepath)
+            # Option already exists (shadowed) — append file to appearance list
+            if filepath not in self._data[k_lower]['appearance']:
+                self._data[k_lower]['appearance'].append(filepath)
 
     def to_dict(self):
-        """
-        Converts internal storage to the final output format.
-        Removes normalization keys.
-        """
-        result = {}
-        for data in self._storage.values():
-            # Create a copy to avoid mutating internal state if called multiple times
-            item = data.copy()
-            key_name = item.pop('name')
-            result[key_name] = item
-        return result
-
+        # Convert to external format: Key -> { value, location, appearance }
+        # Remove internal 'name' key from the result
+        return {v['name']: {k: val for k, val in v.items() if k != 'name'}
+                for v in self._data.values()}
 
 class SshConfigParser:
-    """
-    Responsibility: Read files, handle 'Include' recursion, parse lines.
-    """
     def __init__(self, base_dir="/etc/ssh"):
-        self.current_scope = "global"
-        self.registry = {"global": SshOptionRegistry(scope=self.current_scope)}
         self.base_dir = base_dir
         self.processed_files = set()
-        self.parent_scope = None
-        self.current_file = None # e.g. default
-        self.max_depth = 20
 
-    def parse(self, filepath, depth=0):
-        if depth > self.max_depth:
-            return # Circuit breaker for infinite recursion
+        # Registry: key = scope identifier string, value = OptionStore instance
+        self.registry = {
+            "global": OptionStore()
+        }
 
-        # Resolve symlinks and absolute paths
+    def _get_store(self, scope):
+        if scope not in self.registry:
+            self.registry[scope] = OptionStore()
+        return self.registry[scope]
+
+    def parse(self, filepath, current_scope="global", depth=0):
+        """
+        Recursive configuration parser.
+        current_scope: context inherited from parent file (for Include directives).
+        """
+        if depth > 20:
+            return
+
         abs_path = os.path.abspath(filepath)
 
-        # Avoid processing the exact same file object twice in one stack (loops)
-        # However, SSHD technically allows including the same file, but for static analysis
-        # usually we want to process it to find the definitions.
-        # But to be safe against loops like A includes B includes A:
         if abs_path in self.processed_files:
             return
 
@@ -133,71 +118,85 @@ class SshConfigParser:
         if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
             return
 
-        self.current_file = abs_path
-
         try:
-            with open(abs_path, 'r') as f:
+            with open(abs_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         except (IOError, OSError):
-            return # Skip unreadable files
+            return
+
+        # Local scope variable for the CURRENT file.
+        # Initially set to the value passed by parent (for Include within Match blocks).
+        local_scope = current_scope
 
         for line in lines:
-            self._process_line(line, depth)
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
 
-        # After finishing this file, restore previous scope
-        self.current_scope = self.parent_scope if self.parent_scope else "global"
+            try:
+                parts = shlex.split(line)
+            except ValueError:
+                continue
 
-    def _process_line(self, line, depth):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            return
+            if not parts:
+                continue
 
-        try:
-            parts = shlex.split(line)
-        except ValueError:
-            return # Syntax error in config file, skip
+            key = parts[0]
+            value = " ".join(parts[1:]) if len(parts) > 1 else ""
 
-        if not parts:
-            return
+            if key.lower() == 'include':
+                # Recursively process included files with CURRENT local_scope
+                self._handle_include(value, local_scope, depth)
 
-        key = parts[0]
-        # Reconstruct value (everything after key)
-        value = " ".join(parts[1:]) if len(parts) > 1 else ""
+            elif key.lower() == 'match':
+                # Switch context within the current file
+                local_scope = value
+                # Initialize store to ensure it exists even if no options follow
+                self._get_store(local_scope)
 
-        if key.lower() == 'include':
-            self._handle_include(value, depth)
-        elif key.lower() == 'match':
-            self.parent_scope = self.current_scope
-            self.current_scope = value
-            if self.current_scope not in self.registry:
-                self.registry[self.current_scope] = SshOptionRegistry(scope=self.current_scope)
-        else:
-            self.registry[self.current_scope].register(key, value, self.current_file)
+            else:
+                # Regular option — write to current scope store
+                store = self._get_store(local_scope)
+                store.add(key, value, abs_path)
 
-    def _handle_include(self, pattern, depth):
-        """
-        Handles the Include directive logic.
-        """
-        # If path is relative, it is relative to /etc/ssh (usually),
-        # NOT the current file's directory.
+        # Upon function exit (EOF), local_scope is destroyed.
+        # Control returns to the caller with its own local_scope version.
+        # This emulates Match block closure at end of file.
+
+    def _handle_include(self, pattern, active_scope, depth):
         if not os.path.isabs(pattern):
             pattern = os.path.join(self.base_dir, pattern)
 
-        # Sort is crucial because SSHD loads includes in lexical order
-        matched_files = sorted(glob.glob(pattern))
+        # Sorting is essential for deterministic processing order
+        for file_path in sorted(glob.glob(pattern)):
+            self.parse(file_path, active_scope, depth + 1)
 
-        # save current file context
-        current_file = self.current_file
+    def get_structured_data(self):
+        """
+        Constructs the output data structure:
+        Root -> Global Options
+        Root['Match'] -> List of Dicts (with 'title')
+        """
+        # 1. Use global options as the base structure
+        result = self.registry["global"].to_dict()
 
-        for file_path in matched_files:
-            # Recursively parse
-            # We must create a new recursion branch
-            # We intentionally do not remove from processed_files after return
-            # to prevent loops.
-            self.parse(file_path, depth + 1)
+        # 2. Build list of Match blocks
+        match_list = []
+        for scope, store in self.registry.items():
+            if scope == "global":
+                continue
 
-            # restore current file context
-            self.current_file = current_file
+            # Convert store to dictionary format
+            block_data = store.to_dict()
+            # Add required 'title' field
+            block_data['title'] = scope
+            match_list.append(block_data)
+
+        # 3. Include Match blocks in result if any exist
+        if match_list:
+            result['Match'] = match_list
+
+        return result
 
 def main():
     module = AnsibleModule(
@@ -208,31 +207,19 @@ def main():
     )
 
     config_path = module.params['config_path']
-    base_ssh_dir = os.path.dirname(config_path)
+    base_dir = os.path.dirname(config_path)
 
+    parser = SshConfigParser(base_dir=base_dir)
 
-    # 2. Initialize Parser with Registry (The Worker)
-    parser = SshConfigParser(base_dir=base_ssh_dir)
-
-    # 3. Execute
     if os.path.exists(config_path):
-        parser.parse(config_path)
+        parser.parse(config_path, "global")
     else:
-        module.fail_json(msg=f"Main config file not found: {config_path}")
+        module.fail_json(msg=f"Config file not found: {config_path}")
 
-    registry = parser.registry
+    # Retrieve data in the required format
+    final_structure = parser.get_structured_data()
 
-    config_data = registry.get("global").to_dict()
-    for scope, reg in registry.items():
-        if scope == "global":
-            continue
-        if "Match" in config_data:
-            config_data["Match"] += [{"title": scope, **reg.to_dict()}]
-        else:
-            config_data["Match"] = [{"title": scope, **reg.to_dict()}]
-
-    # 4. Return Data
-    module.exit_json(changed=False, sshd_config=config_data)
+    module.exit_json(changed=False, sshd_config=final_structure)
 
 if __name__ == '__main__':
     main()
