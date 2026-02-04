@@ -1,2 +1,3 @@
 tests/unit/plugins/filter/__pycache__
 tests/unit/plugins/modules/__pycache__
+collections/ansible_collections/aursu/general

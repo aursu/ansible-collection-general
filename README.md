@@ -154,7 +154,7 @@ The module supports the full range of units accepted by LVM's `--units` option:
 | `p`, `P` | PiB / PB       | Petabytes |
 | `e`, `E` | EiB / EB       | Exabytes |
 
-Lowercase = base-2 (binary), uppercase = base-10 (decimal).  
+Lowercase = base-2 (binary), uppercase = base-10 (decimal).
 Custom units (e.g. `--units 3M`) are also accepted by LVM but are not supported in this module at this time.
 
 ## aursu.general.dev_info
@@ -430,3 +430,31 @@ DEBUG: received parameters: {"dev": "/dev/mapper/data-data1"}
 | 5    | Unpack it with `explode`              |
 | 6    | Modify the real module code           |
 | 7    | Run with `execute` and observe output |
+
+## Testing
+
+This collection includes a Docker Compose configuration to simplify running unit tests (in an isolated environment).
+
+### Run all unit tests
+
+To run the entire test suite, simply execute:
+
+```
+docker compose run --rm --remove-orphans tests
+```
+
+### Run specific tests
+
+You can override the default command to run tests for a specific path or file.
+For example, to test only the modules:
+
+```
+docker compose run --rm --remove-orphans tests pytest -v tests/unit/plugins/modules
+
+```
+
+Or to run a specific test file:
+
+```
+docker compose run --rm --remove-orphans tests pytest -v tests/unit/plugins/modules/test_sshd_info.py
+```
