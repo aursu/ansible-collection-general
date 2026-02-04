@@ -1,18 +1,20 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+# pyright: reportMissingImports=false
+# pylint: disable=import-error
 
 #  Copyright (c) 2026 Alexander Ursu <alexander.ursu@gmail.com>
 #  MIT License (see LICENSE file or https://opensource.org/licenses/MIT)
 #  SPDX-License-Identifier: MIT
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
-
 import io
 import glob
 import os
 import shlex
 from ansible.module_utils.basic import AnsibleModule
+
+__metaclass__ = type
 
 DOCUMENTATION = r"""
 module: sshd_info
