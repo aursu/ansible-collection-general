@@ -13,7 +13,7 @@ module: fstab_info
 
 short_description: Gather the static mount table from /etc/fstab
 
-version_added: "1.5.0"
+version_added: "1.6.0"
 
 description:
   - Reads the static mount table with C(findmnt --fstab) and returns it as structured data.
