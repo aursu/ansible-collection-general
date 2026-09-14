@@ -1,11 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+# pyright: reportMissingImports=false
+# pylint: disable=import-error
 
 #  Copyright (c) 2025 Alexander Ursu <alexander.ursu@gmail.com>
 #  MIT License (see LICENSE file or https://opensource.org/licenses/MIT)
 #  SPDX-License-Identifier: MIT
 
 from __future__ import (absolute_import, division, print_function)
+import os
+import json
+import stat
+from ansible.module_utils.basic import AnsibleModule
+
 __metaclass__ = type
 
 DOCUMENTATION = r"""
@@ -112,11 +119,6 @@ mount:
   returned: when filetype is 'b' and device is mounted
   type: dict
 """
-
-import os
-import json
-import stat
-from ansible.module_utils.basic import AnsibleModule
 
 def run_findmnt(module, dev=None):
     if dev is None:

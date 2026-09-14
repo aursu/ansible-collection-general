@@ -1,11 +1,16 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+# pyright: reportMissingImports=false
+# pylint: disable=import-error
 
 #  Copyright (c) 2025 Alexander Ursu <alexander.ursu@gmail.com>
 #  MIT License (see LICENSE file or https://opensource.org/licenses/MIT)
 #  SPDX-License-Identifier: MIT
 
 from __future__ import (absolute_import, division, print_function)
+import json
+from ansible.module_utils.basic import AnsibleModule
+
 __metaclass__ = type
 
 DOCUMENTATION = r"""
@@ -130,9 +135,6 @@ lv:
       copy_percent: ""
       convert_lv: ""
 """
-
-import json
-from ansible.module_utils.basic import AnsibleModule
 
 # LVM-supported unit suffixes, grouped by type
 

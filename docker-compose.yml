@@ -1,0 +1,7 @@
+services:
+  tests:
+    working_dir: /var/ansible/project
+    volumes:
+    - ./:/var/ansible/project
+    image: "ghcr.io/aursu/rockylinux:10.1.20251126-ansible"
+    command: pytest -v tests/unit
