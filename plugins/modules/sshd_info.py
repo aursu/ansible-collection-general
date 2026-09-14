@@ -20,7 +20,7 @@ module: sshd_info
 
 short_description: Gather configuration details from sshd_config and included files
 
-version_added: "1.0.0"
+version_added: "1.5.0"
 
 description:
   - Parses OpenSSH server configuration recursively.

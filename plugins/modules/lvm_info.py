@@ -36,10 +36,10 @@ options:
   unit:
     description:
       - Unit to use when reporting sizes, passed as C(--units) to LVM tools.
-      - Acceptable values: C(r), C(R), C(h), C(H), C(b), C(B), C(s), C(S), C(k), C(K), C(m), C(M), C(g), C(G), C(t), C(T), C(p), C(P), C(e), C(E)
+      - 'Acceptable values: C(r), C(R), C(h), C(H), C(b), C(B), C(s), C(S), C(k), C(K), C(m), C(M), C(g), C(G), C(t), C(T), C(p), C(P), C(e), C(E)'
       - Lowercase = base-2 (binary), uppercase = base-10 (decimal).
       - Default is C(m) (mebibytes).
-      - For example, C(unit: G) will return sizes in gigabytes using base-10.
+      - 'For example, C(unit: G) will return sizes in gigabytes using base-10.'
     type: str
     default: "m"
     choices: ["r", "R", "h", "H", "b", "B", "s", "S", "k", "K", "m", "M", "g", "G", "t", "T", "p", "P", "e", "E"]

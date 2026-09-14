@@ -1,0 +1,66 @@
+---
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # The collection must sit at ansible_collections/<ns>/<name> inside the
+      # workspace. sshd_info imports its own module_utils by the full
+      # ansible_collections.aursu.general path, so a plain checkout into the
+      # workspace root makes that import fail.
+      - uses: actions/checkout@v4
+        with:
+          path: ansible_collections/aursu/general
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the test toolchain
+        run: pip install --disable-pip-version-check ansible-core pytest
+
+      - name: Unit tests
+        working-directory: ansible_collections/aursu/general
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest tests/unit -q
+
+  docs:
+    name: module documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ansible_collections/aursu/general
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ansible-core
+        run: pip install --disable-pip-version-check ansible-core
+
+      # Every module here is an information-gathering module whose DOCUMENTATION
+      # block is its contract. A YAML error in it is invisible until someone runs
+      # ansible-doc, so run ansible-doc: it parses the block the same way the
+      # Galaxy importer does, and fails on a malformed one.
+      - name: ansible-doc renders every module
+        env:
+          ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
+        run: |
+          set -e
+          for m in dev_info fstab_info lvm_info sshd_info; do
+            echo "--- aursu.general.${m} ---"
+            ansible-doc "aursu.general.${m}" >/dev/null
+            echo "    OK"
+          done

@@ -18,7 +18,7 @@ version_added: "1.5.0"
 description:
   - Reads the static mount table with C(findmnt --fstab) and returns it as structured data.
   - This is deliberately distinct from M(aursu.general.dev_info), which reports the B(live)
-    mount table. The two can disagree, and the disagreement is what matters: the live table
+    mount table. The two can disagree, and the disagreement is what matters. The live table
     shows the kernel's effective options and the device as actually mounted, while fstab shows
     what will be used at the B(next boot).
   - Only fstab carries the boot-behaviour directives C(nofail) and C(_netdev). They never appear
