@@ -191,6 +191,56 @@ It uses the following sources:
   register: dev_info
 ```
 
+## aursu.general.fstab_info
+
+This module returns the **static** mount table from `/etc/fstab`, read with
+`findmnt --fstab -J`.
+
+It is deliberately separate from `dev_info`, which reports the **live** mount table. The two
+can disagree, and the disagreement is the point:
+
+| | `dev_info` (live) | `fstab_info` (static) |
+|---|---|---|
+| Source shown | the device as actually mounted, e.g. `/dev/mapper/data-data1` | the spec as written, e.g. `/dev/data-ssd/data1` |
+| Options shown | the kernel's effective options, e.g. `rw,relatime,attr2,inode64` | the file's options, e.g. `defaults` |
+| Reflects | the current boot | the **next** boot |
+
+Only fstab carries `nofail` and `_netdev`. Those are directives to systemd's fstab
+generator, not kernel mount options, so they never appear in the live table — a check for
+them against `dev_info` output can never succeed.
+
+### Parameters
+
+| Name | Required | Type | Description |
+|------|----------|------|-------------|
+| path | no       | path | Restrict the result to this mount point. Aliases: `mountpoint`, `target`. Omit for the whole table. |
+
+Lookup is by **mount point**, not by device, on purpose: a stale fstab source cannot be
+resolved back to a device, so a device-keyed lookup returns nothing for exactly the entries
+that are broken.
+
+### Return values
+
+| Key       | Type | Description |
+|-----------|------|-------------|
+| is_exists | bool | Whether `/etc/fstab` could be read. |
+| fstab     | list | Every entry, in file order; filtered when `path` is given. Each has `target`, `source`, `fstype`, `options`, `freq`, `passno`. |
+| entry     | dict | The single matching entry when `path` is given, else `null`. `null` also when the mount point is not declared. |
+
+### Example
+
+```yaml
+- name: Check that a non-root mount will not block boot
+  aursu.general.fstab_info:
+    path: /mnt/disks/data1
+  register: fstab
+
+- ansible.builtin.assert:
+    that:
+      - fstab.entry is not none
+      - "'nofail' in fstab.entry.options"
+```
+
 # How to Publish an Ansible Content Collection
 
 This is a step-by-step guide to creating and publishing an Ansible Content Collection. It follows the official Red Hat documentation:
