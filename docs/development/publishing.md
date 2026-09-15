@@ -142,7 +142,30 @@ a version it already holds. Two consequences:
 - a tag that does not match `galaxy.yml`, or names an already-published version, cannot publish
   and cannot be fixed by retrying - it has to be re-cut.
 
-Both are worth checking automatically before the build step.
+Both are checked before the build step by
+[`.github/scripts/release_preflight.py`](../../.github/scripts/release_preflight.py), which the
+release workflow runs and which you can run by hand before tagging:
+
+```bash
+python .github/scripts/release_preflight.py --tag v1.8.0
+```
+
+It refuses the release if the tag does not match `galaxy.yml` (a leading `v` is stripped, so
+`v1.8.0` and `1.8.0` both work), if Galaxy already holds that version, or if the version is not
+valid semver. `ansible-galaxy collection build` does **not** check the version - fed
+`version: not-a-version` it produces `aursu-probe-not-a-version.tar.gz` without complaint - so the
+rejection lands at Galaxy's import step, which is after the upload and therefore after the tag is
+spent. The check uses ansible-core's own `SemanticVersion`, the class Galaxy's dependency resolver
+uses, so it is the same notion of valid that will judge the upload. Galaxy being unreachable is a warning, not a refusal: an outage elsewhere is
+not evidence that the version is taken, and the publish step fails loudly enough if it is.
+
+Namespace and name come from `galaxy.yml` too, so the script works unchanged in the other
+collections. It is a script rather than inline shell for one reason worth stating: the check you
+actually want is the one you can run *before* cutting the tag, and inline workflow steps can only
+run after.
+
+`--skip-galaxy` checks everything except the network call. Exit codes are `0` clean, `1` a guard
+refused the release, `2` the check could not run.
 
 ## Optional: a Makefile
 

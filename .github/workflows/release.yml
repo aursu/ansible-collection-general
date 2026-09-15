@@ -27,46 +27,14 @@ jobs:
       - name: Install ansible-core
         run: pip install --disable-pip-version-check ansible-core
 
-      # The guard that makes this worth having. Galaxy takes its version from
-      # galaxy.yml and ignores the tag entirely, so a mismatch publishes the
-      # wrong version under the right tag and cannot be undone - Galaxy does not
-      # allow re-uploading a version. Fail before building instead.
-      - name: Assert the tag matches galaxy.yml
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          declared="$(sed -n 's/^version:[[:space:]]*//p' galaxy.yml | head -1)"
-          echo "tag=${tag} galaxy.yml=${declared}"
-          if [ "${tag}" != "${declared}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match galaxy.yml version ${declared}."
-            echo "::error::Bump galaxy.yml and re-tag, or tag v${declared}."
-            exit 1
-          fi
+      # Galaxy takes the version from galaxy.yml and ignores the tag, and it
+      # refuses a version it already holds. Both failures are permanent: the tag
+      # cannot be re-pointed at a corrected artifact, only abandoned. The script
+      # is runnable by hand before tagging, which is the point of it being a
+      # script rather than inline shell.
+      - name: Pre-flight (tag matches galaxy.yml, version is free on Galaxy)
+        run: python .github/scripts/release_preflight.py
 
-      # A release that ships a failing test is worse than a late release.
-
-      # Galaxy does not allow re-uploading a version, so a collision is not a
-      # warning, it is an unusable tag. This exact thing happened: 1.5.0 was
-      # published on 2026-02-04 from a working tree whose galaxy.yml bump was
-      # never committed, so the repository claimed 1.4.0 for seven months while
-      # Galaxy served 1.5.0. Check before building, not after.
-      - name: Refuse to publish a version Galaxy already holds
-        run: |
-          declared="$(sed -n 's/^version:[[:space:]]*//p' galaxy.yml | head -1)"
-          url="https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/aursu/general/versions/${declared}/"
-          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url")"
-          echo "Galaxy says HTTP ${code} for aursu.general ${declared}"
-          case "${code}" in
-            200)
-              echo "::error::aursu.general ${declared} is already published on Galaxy."
-              echo "::error::Galaxy will not accept it again. Bump galaxy.yml and re-tag."
-              exit 1
-              ;;
-            404) echo "Version is free." ;;
-            # Anything else is Galaxy being unreachable or unhappy, which is not
-            # evidence the version is taken. Say so and continue; the publish
-            # step will fail loudly enough if it is.
-            *) echo "::warning::Could not confirm (HTTP ${code}); continuing." ;;
-          esac
       - name: Install pytest
         run: pip install --disable-pip-version-check pytest
 
