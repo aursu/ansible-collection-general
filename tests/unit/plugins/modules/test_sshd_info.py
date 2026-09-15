@@ -101,7 +101,10 @@ Port 2222
         self.assertIn('Port', result, "Parser returned empty result")
 
         # Проверка значений
-        self.assertEqual(result['Port']['value'], '22')
+        # Port is cumulative: both occurrences are in force, so value is a list.
+        # This exercises the cumulative path through the whole module stack.
+        self.assertEqual(result['Port']['value'], ['22', '2222'])
+        self.assertTrue(result['Port']['cumulative'])
         self.assertEqual(result['Port']['location'], '/etc/ssh/sshd_config')
         self.assertEqual(result['PasswordAuthentication']['value'], 'no')
 

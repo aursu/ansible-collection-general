@@ -18,18 +18,20 @@ class TestOptionStore(unittest.TestCase):
         """
         store = OptionStore("global")
 
+        # MaxAuthTries is shadowed. Port is deliberately NOT used here: it is
+        # cumulative, so it would not demonstrate shadowing at all.
         # 1. First occurrence
-        store.add("Port", "22", "/etc/ssh/sshd_config")
+        store.add("MaxAuthTries", "3", "/etc/ssh/sshd_config")
 
         # 2. Second occurrence (shadowing)
-        store.add("Port", "2222", "/etc/ssh/conf.d/override.conf")
+        store.add("MaxAuthTries", "9", "/etc/ssh/conf.d/override.conf")
 
         data = store.to_dict()
 
-        self.assertEqual(data["Port"]["value"], "22")
-        self.assertEqual(len(data["Port"]["appearance"]), 2)
-        self.assertEqual(data["Port"]["appearance"][0], "/etc/ssh/sshd_config")
-        self.assertEqual(data["Port"]["appearance"][1], "/etc/ssh/conf.d/override.conf")
+        self.assertEqual(data["MaxAuthTries"]["value"], "3")
+        self.assertEqual(len(data["MaxAuthTries"]["appearance"]), 2)
+        self.assertEqual(data["MaxAuthTries"]["appearance"][0], "/etc/ssh/sshd_config")
+        self.assertEqual(data["MaxAuthTries"]["appearance"][1], "/etc/ssh/conf.d/override.conf")
 
     def test_structure_format(self):
         """Verify that Match block returns correct condition field."""
@@ -64,8 +66,8 @@ class TestSshConfigParser(unittest.TestCase):
         mock_isfile.return_value = True
 
         self.fs_map = {
-            "/etc/ssh/sshd_config": "Port 22\nInclude /etc/ssh/extra.conf\n",
-            "/etc/ssh/extra.conf": "Port 80\nPermitRootLogin no\n"
+            "/etc/ssh/sshd_config": "MaxAuthTries 3\nInclude /etc/ssh/extra.conf\n",
+            "/etc/ssh/extra.conf": "MaxAuthTries 9\nPermitRootLogin no\n"
         }
 
         mock_glob.side_effect = lambda x: [x] if x in self.fs_map else []
@@ -74,9 +76,9 @@ class TestSshConfigParser(unittest.TestCase):
         self.parser.parse("/etc/ssh/sshd_config")
         result = self.parser.get_structured_data()
 
-        self.assertEqual(result["Port"]["value"], "22")
-        self.assertEqual(result["Port"]["location"], "/etc/ssh/sshd_config")
-        self.assertEqual(result["Port"]["appearance"], ["/etc/ssh/sshd_config", "/etc/ssh/extra.conf"])
+        self.assertEqual(result["MaxAuthTries"]["value"], "3")
+        self.assertEqual(result["MaxAuthTries"]["location"], "/etc/ssh/sshd_config")
+        self.assertEqual(result["MaxAuthTries"]["appearance"], ["/etc/ssh/sshd_config", "/etc/ssh/extra.conf"])
         self.assertEqual(result["PermitRootLogin"]["value"], "no")
 
     @patch(f'{TARGET_MOD}.io.open')

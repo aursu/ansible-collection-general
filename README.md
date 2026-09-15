@@ -241,6 +241,117 @@ that are broken.
       - "'nofail' in fstab.entry.options"
 ```
 
+## aursu.general.sshd_info
+
+Parses an OpenSSH **server** configuration recursively, following `Include` directives, and
+reports what each option is set to and where.
+
+### Why it is not just a config reader
+
+sshd applies **first match wins**, which is the opposite of the intuition most people bring to a
+configuration directory. A drop-in read early — one in `sshd_config.d/`, say — silently defeats
+the same option set later in the main file. Knowing an option is set somewhere is not the same as
+knowing which setting is in force, so the module reports both.
+
+### Parameters
+
+| Name | Required | Type | Description |
+|------|----------|------|-------------|
+| config_path | no | path | Main configuration file. Default `/etc/ssh/sshd_config`. Includes are resolved relative to its directory. |
+
+### Return values
+
+| Key | Type | Description |
+|-----|------|-------------|
+| sshd_config | dict | Global options, plus a `Match` list when Match blocks are present. |
+| parsed_files | list | Every file read, in order, including those reached through `Include`. |
+| errors | list | Files that could not be read, include loops, depth-limit hits and unlexable lines. Empty on a clean parse. |
+
+Each option is reported as three fields, and only three (cumulative directives add one - see
+below):
+
+```yaml
+PasswordAuthentication:
+  value: "no"          # the setting in force
+  location: /etc/ssh/sshd_config.d/50-cloud-init.conf   # the file to edit
+  appearance:          # every file it occurs in - the list to clean up
+    - /etc/ssh/sshd_config.d/50-cloud-init.conf
+    - /etc/ssh/sshd_config
+```
+
+That triple is the whole contract, and it is shaped for acting on rather than for reading:
+**to change a setting, edit `location` and delete the directive from every other file in
+`appearance`; to remove it, delete it from all of them.**
+
+The discarded values themselves are not reported. Knowing a directive was written three times
+is not actionable - knowing which files to remove it from is, and `appearance` already says so.
+
+### Cumulative directives
+
+Some directives are not shadowed at all: every occurrence takes effect. For those `value` is a
+**list** of all of them, and `cumulative` marks it:
+
+```yaml
+ListenAddress:
+  value: ["10.0.0.1", "10.0.0.2"]   # all of them, all in force
+  cumulative: true
+  location: /etc/ssh/sshd_config
+  appearance: [/etc/ssh/sshd_config]
+```
+
+There is one field for the setting either way. `cumulative` - present only on these directives -
+says whether to expect a string or a list, and a cumulative directive written once still yields
+a one-item list, so a caller never has to handle both shapes for the same directive.
+
+```yaml
+- ansible.builtin.assert:
+    that: "'0.0.0.0' not in sshd.sshd_config.ListenAddress.value"
+```
+
+The directives are:
+
+`Port`, `ListenAddress`, `HostKey`, `AcceptEnv`, `AllowUsers`, `DenyUsers`, `AllowGroups`,
+`DenyGroups`, `Subsystem`.
+
+The list is **measured against OpenSSH 9.9p1**, not taken from the manual page, because the
+intuition is wrong in both directions: `SetEnv`, `PermitOpen` and `PermitListen` look like they
+should accumulate and do not.
+
+### As written, not as computed
+
+The module reports the configuration as it is written, not sshd's computed view. Two differences
+to expect against `sshd -T`:
+
+- sshd canonicalises deprecated aliases: `PermitRootLogin=prohibit-password` is reported here as
+  `prohibit-password`, and by `sshd -T` as `without-password`;
+- sshd expands `ListenAddress` against every `Port` into concrete listeners
+  (`127.0.0.1:22`, `127.0.0.1:2222`, …); this returns the addresses as configured.
+
+`Key Value`, `Key=Value` and `Key = Value` are all accepted, as sshd accepts them.
+
+### Trust the `errors` list
+
+Drop-ins are routinely mode `0600`. Run unprivileged, a parser that swallows read failures
+returns a configuration with fewer options in it, which looks exactly like a correct answer.
+Anything that could not be read is named in `errors`; check it is empty before trusting the rest.
+
+### Example
+
+```yaml
+- name: Gather the effective sshd configuration
+  aursu.general.sshd_info:
+  register: sshd
+
+- name: Refuse to report on a partial parse
+  ansible.builtin.assert:
+    that: sshd.errors | length == 0
+
+- name: Every listening address must be internal
+  ansible.builtin.assert:
+    that: sshd.sshd_config.ListenAddress.values | reject('match', '^0\.0\.0\.0') | list
+          | length == sshd.sshd_config.ListenAddress.values | length
+```
+
 # How to Publish an Ansible Content Collection
 
 This is a step-by-step guide to creating and publishing an Ansible Content Collection. It follows the official Red Hat documentation:

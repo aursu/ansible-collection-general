@@ -23,7 +23,7 @@ DOCUMENTATION = r'''
 module_utils: ssh_parser
 author: Alexander Ursu
 short_description: Recursively parse OpenSSH server configuration
-version_added: "1.0.0"
+version_added: "1.5.0"
 description:
   - This module_utils library provides classes to parse C(sshd_config) and its included files.
   - It resolves the effective configuration by applying OpenSSH's "First Match Wins" strategy.
@@ -45,7 +45,7 @@ data = parser.get_structured_data()
 
 # Example access to global option
 port_info = data.get('Port')
-# {'value': '22', 'location': '/etc/ssh/sshd_config', 'appearance': ['...']}
+# {'value': '22', 'values': ['22', '2222'], 'cumulative': True, ...}
 
 # Example access to Match blocks
 match_blocks = data.get('Match', [])
@@ -64,6 +64,85 @@ OptionStore:
   type: class
 '''
 
+# Directives where EVERY occurrence takes effect, rather than the first one
+# winning and the rest being discarded.
+#
+# This list is measured, not assumed: each entry was verified against
+# OpenSSH 9.9p1 by writing a config with two occurrences and reading back
+# `sshd -T`. Several plausible candidates are deliberately absent because the
+# measurement contradicted the intuition - SetEnv, PermitOpen and PermitListen
+# are all first-wins.
+#
+# A directive missing from this list is shadowed: only its first occurrence is
+# in force. Those report `value`, `location` and `appearance` and nothing more -
+# the discarded values are not recorded, because `appearance` already names
+# every file they would have to be removed from.
+CUMULATIVE_DIRECTIVES = frozenset((
+    "acceptenv",
+    "allowgroups",
+    "allowusers",
+    "denygroups",
+    "denyusers",
+    "hostkey",
+    "listenaddress",
+    "port",
+    "subsystem",
+))
+
+# sshd accepts "Key Value", "Key=Value" and "Key = Value" interchangeably.
+SEPARATOR = "="
+
+MAX_INCLUDE_DEPTH = 20
+
+
+def split_directive(line):
+    """Split one configuration line into (key, value).
+
+    Handles the equals form as well as whitespace, because sshd does:
+    verified against OpenSSH 9.9p1, which accepts all three spellings below.
+    Returns (None, None) for a line that cannot be lexed.
+
+    >>> split_directive("Port 22")
+    ('Port', '22')
+    >>> split_directive("PermitRootLogin=prohibit-password")
+    ('PermitRootLogin', 'prohibit-password')
+    >>> split_directive("MaxAuthTries = 5")
+    ('MaxAuthTries', '5')
+    >>> split_directive("AllowUsers alice bob")
+    ('AllowUsers', 'alice bob')
+    >>> split_directive("Subsystem sftp /usr/libexec/openssh/sftp-server")
+    ('Subsystem', 'sftp /usr/libexec/openssh/sftp-server')
+    >>> split_directive("Banner none")
+    ('Banner', 'none')
+    """
+    try:
+        parts = shlex.split(line)
+    except ValueError:
+        return None, None
+
+    if not parts:
+        return None, None
+
+    # "Key = Value" lexes to three tokens; drop the bare separator.
+    # Only drop the bare separator if the first token doesn't already contain it
+    if len(parts) > 1 and parts[1] == SEPARATOR and SEPARATOR not in parts[0]:
+        parts = [parts[0]] + parts[2:]
+
+    key = parts[0]
+    rest = parts[1:]
+
+    # "Key=Value" lexes to a single token.
+    if SEPARATOR in key:
+        key, _, first = key.partition(SEPARATOR)
+        if first:
+            rest = [first] + rest
+
+    if not key:
+        return None, None
+
+    return key, " ".join(rest)
+
+
 class OptionStore:
     """
     Stores options for a specific scope (Global or a particular Match condition).
@@ -73,7 +152,7 @@ class OptionStore:
         self.scope_name = scope_name
         self.location = None
         self.appearance = []
-        # Data structure: { "lower_key": { "name": "RealKey", "value": "...", ... } }
+        # Data structure: { "lower_key": { "name": "RealKey", "values": [...], "appearance": [...] } }
         self._options = {}
 
     def update_appearance(self, filepath):
@@ -86,25 +165,71 @@ class OptionStore:
             self.appearance.append(filepath)
 
     def add(self, key, value, filepath):
+        """Record one occurrence of a directive.
+
+        Two lists are kept and they are not correlated with each other:
+        `values` in encounter order, and `appearance` - the files, de-duplicated
+        in the same order. Nothing pairs a value with the file it came from,
+        because nothing needs to. `value` is derived from the first list and
+        `location` from the head of the second, and a caller acts on files, not
+        on discarded values.
+        """
         k_lower = key.lower()
-        if k_lower not in self._options:
-            # First occurrence of the option becomes the effective value
-            self._options[k_lower] = {
-                "name": key,
-                "value": value,
-                "location": filepath,
-                "appearance": [filepath]
-            }
-        else:
-            # Option already exists (shadowed) — append file to appearance list
-            if filepath not in self._options[k_lower]["appearance"]:
-                self._options[k_lower]["appearance"].append(filepath)
+        entry = self._options.get(k_lower)
+
+        if entry is None:
+            entry = {"name": key, "values": [], "appearance": []}
+            self._options[k_lower] = entry
+
+        entry["values"].append(value)
+        if filepath not in entry["appearance"]:
+            entry["appearance"].append(filepath)
+
+    @staticmethod
+    def _export_option(entry):
+        """Render one directive for output.
+
+        The shape is deliberately minimal - `value`, `location` and
+        `appearance`, where `value` is the setting in force, `location` is the
+        file to edit and `appearance` is every file the directive occurs in,
+        which is the list to clean up. That triple is the contract other tooling
+        reads.
+
+        No record of discarded values is emitted, and none is kept internally
+        either. Knowing a directive was written three times is not actionable;
+        knowing which files to remove it from is, and `appearance` already says
+        so.
+
+        `value` carries a string for a shadowed directive and a **list** for a
+        cumulative one, where every occurrence is in force rather than only the
+        first. There is exactly one field for the setting either way; the
+        `cumulative` flag, present only on those directives, says which type to
+        expect. The type follows the flag and not the count, so a cumulative
+        directive written once still yields a one-item list.
+        """
+        values = entry["values"]
+        appearance = entry["appearance"]
+
+        exported = {
+            # First occurrence, and the file it was in - which is the head of
+            # `appearance`, since that list is built in the same order.
+            "value": values[0],
+            "location": appearance[0],
+            # Copied: the internal list must not be mutable through the export.
+            "appearance": list(appearance),
+        }
+
+        if entry["name"].lower() in CUMULATIVE_DIRECTIVES:
+            exported["value"] = list(values)
+            exported["cumulative"] = True
+
+        return exported
 
     def to_dict(self):
-        # Convert to external format: Key -> { value, location, appearance }
-        # Remove internal "name" key from the result
+        # Convert to external format: Key -> { value, values, ... }
+        # The internal "name" key is dropped from the result.
         options_export = {
-            v["name"]: {k: val for k, val in v.items() if k != "name"}
+            v["name"]: self._export_option(v)
             for v in self._options.values()
         }
 
@@ -118,6 +243,7 @@ class OptionStore:
             "options": options_export
         }
 
+
 class SshConfigParser:
     def __init__(self, base_dir="/etc/ssh"):
         self.base_dir = base_dir
@@ -126,6 +252,16 @@ class SshConfigParser:
         self.registry = {
             "global": OptionStore("global")
         }
+
+        # Files actually read, in the order they were read, and anything that
+        # went wrong while reading them. Both matter: a config audit that
+        # silently skipped an unreadable drop-in is worse than one that failed,
+        # because it looks like an answer.
+        self.parsed_files = []
+        self.errors = []
+
+    def _record_error(self, path, reason):
+        self.errors.append({"path": path, "reason": reason})
 
     def _get_store(self, scope):
         if scope not in self.registry:
@@ -138,21 +274,31 @@ class SshConfigParser:
         current_scope: context inherited from parent file (for Include directives).
         call_stack: list of files currently being parsed (to prevent loops A->B->A).
         """
-        if depth > 20:
+        abs_path = os.path.abspath(filepath)
+
+        if depth > MAX_INCLUDE_DEPTH:
+            self._record_error(
+                abs_path,
+                "include depth exceeded %d; not parsed" % MAX_INCLUDE_DEPTH,
+            )
             return
 
         if call_stack is None:
             call_stack = set()
 
-        abs_path = os.path.abspath(filepath)
-
         # Loop protection (stack-based)
         if abs_path in call_stack:
+            self._record_error(abs_path, "include loop; already being parsed")
             return
 
         # FIXED: Removed 'self.processed_files' check.
         # Files MUST be re-parsed if they are included in different contexts/scopes.
-        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+        if not os.path.exists(abs_path):
+            self._record_error(abs_path, "does not exist")
+            return
+
+        if not os.path.isfile(abs_path):
+            self._record_error(abs_path, "not a regular file")
             return
 
         new_stack = call_stack.copy()
@@ -162,28 +308,31 @@ class SshConfigParser:
             # io.open is safer for mixed Python 2/3 environments
             with io.open(abs_path, 'r', encoding="utf-8", errors='ignore') as f:
                 lines = f.readlines()
-        except (IOError, OSError):
+        except (IOError, OSError) as exc:
+            # Drop-ins are routinely mode 0600. Reading the configuration as an
+            # unprivileged user must not look like a configuration with fewer
+            # options in it.
+            self._record_error(abs_path, "could not be read: %s" % exc)
             return
+
+        if abs_path not in self.parsed_files:
+            self.parsed_files.append(abs_path)
 
         # Local scope variable for the CURRENT file.
         # Initially set to the value passed by parent (for Include within Match blocks).
         local_scope = current_scope
 
-        for line in lines:
+        for lineno, line in enumerate(lines, start=1):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
 
-            try:
-                parts = shlex.split(line)
-            except ValueError:
+            key, value = split_directive(line)
+            if key is None:
+                self._record_error(
+                    abs_path, "line %d could not be parsed: %s" % (lineno, line)
+                )
                 continue
-
-            if not parts:
-                continue
-
-            key = parts[0]
-            value = " ".join(parts[1:]) if len(parts) > 1 else ""
 
             if key.lower() == "include":
                 # Recursively process included files with CURRENT local_scope

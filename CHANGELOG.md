@@ -4,6 +4,84 @@ All notable changes to `aursu.general` are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-09-15
+
+`sshd_info` and `ssh_parser` shipped in 1.5.0 with faults that all pointed the same way: the
+module under-reported, and an under-report is indistinguishable from a clean configuration.
+
+The option shape is otherwise unchanged. Shadowed directives still return exactly `value`,
+`location` and `appearance` - the triple `aursu.ssh_setup.config` reads to decide which file to
+edit and which to clean up.
+
+### Fixed
+
+- **Repeated occurrences of cumulative directives were collapsed to the first.** Measured:
+  `Port 22` plus `Port 2222` reported only `22`; two `ListenAddress` lines reported one; two
+  `HostKey` lines reported one. Every one of those is in force.
+
+  This mattered most for `ListenAddress`. A host bound to two addresses was reported as bound
+  to one, which reads as a narrower exposure than is actually configured - the opposite of the
+  error an audit should make.
+
+- **`Key=Value` syntax was not parsed.** sshd accepts `Key Value`, `Key=Value` and
+  `Key = Value` interchangeably, all three verified against OpenSSH 9.9p1. The parser handled
+  only the first, so `PermitRootLogin=prohibit-password` became a directive *named*
+  `PermitRootLogin=prohibit-password` with an empty value, and `PermitRootLogin` read as
+  **absent** - reporting "not set" for something that is set is the worst available failure
+  direction.
+
+- **Unreadable files were skipped in silence.** `parse()` returned quietly on a missing file, an
+  `IOError`, an include loop or the depth limit. Drop-ins are routinely mode `0600`, so running
+  unprivileged produced a configuration with fewer options in it and no indication anything was
+  missing.
+
+- **A stray `print()` in `sshd_info.main()`.** An Ansible module's stdout is its return channel.
+  ansible-core strips leading non-JSON lines so it did not break, but it was debug residue.
+
+- `ssh_parser` declared `version_added: "1.0.0"`; the library arrived in 1.5.0.
+
+### Added
+
+- **Cumulative directives are reported in full.** Every occurrence of `Port`, `ListenAddress`,
+  `HostKey`, `AcceptEnv`, `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups` and
+  `Subsystem` takes effect, so a single value was an incomplete answer rather than a summary.
+  For those directives `value` is now a **list** of all of them, and a `cumulative: true` flag
+  marks it.
+
+  There remains exactly one field for the setting. `value` is a string for a shadowed directive
+  and a list for a cumulative one; `cumulative`, present only on the latter, says which to
+  expect. A cumulative directive written once still yields a one-item list, so a caller never
+  has to handle both shapes for the same directive.
+
+  The set is **measured** against OpenSSH 9.9p1 with `sshd -T`, not taken from the manual page:
+  `SetEnv`, `PermitOpen` and `PermitListen` look like they should accumulate and do not.
+
+- **`parsed_files` and `errors` in the `sshd_info` return.** Check `errors` is empty before
+  trusting the rest.
+
+- `split_directive()` in `ssh_parser`, with doctests, handling all three accepted spellings.
+
+- Unit coverage for the option shape, each cumulative directive, shadowing, the
+  `location`/`appearance` contract, and every diagnostic path.
+
+- Design documentation under `docs/` - the data model and what was deliberately left out of it,
+  OpenSSH resolution semantics, the collection split, and the writer module's contract.
+
+### Unchanged, deliberately
+
+No record of discarded values is emitted. Knowing a directive was written three times is not
+actionable; knowing which files to remove it from is, and `appearance` already says so.
+
+### Known limitation
+
+`Match` blocks are returned as structure, not evaluated: the module reports what each block
+contains and does not decide what applies to a given user or address.
+
+The module also reports the configuration **as written**, not as sshd computes it. Against
+`sshd -T` expect two differences: sshd canonicalises deprecated aliases (`prohibit-password`
+here, `without-password` there), and expands `ListenAddress` against every `Port` into concrete
+listeners.
+
 ## [1.6.0] - 2026-09-14
 
 ### Added
@@ -89,5 +167,6 @@ made without a git tag, and without the `galaxy.yml` bump being committed.
 Baseline for this changelog; this and earlier releases are recorded in the git
 history and on Galaxy only.
 
+[1.7.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.7.0
 [1.6.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.6.0
 [1.5.0]: https://galaxy.ansible.com/ui/repo/published/aursu/general/

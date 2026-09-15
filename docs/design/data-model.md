@@ -124,17 +124,34 @@ lookup is case-insensitive while the file's own capitalisation should be preserv
 rewriting a line. But the exported key **is** the name, so repeating it inside the object is
 redundant.
 
-## Open question: cumulative directives
+## Cumulative directives
 
 Some directives are not shadowed. Every occurrence of `Port`, `ListenAddress`, `HostKey`,
 `AcceptEnv`, `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups` and `Subsystem` takes
 effect - see [openssh-semantics.md](openssh-semantics.md), where the list is measured rather
 than assumed.
 
-For those, reporting a single `value` is not a summary, it is wrong. A host with two
-`ListenAddress` lines has two listening addresses, and the model as described above reports
-one.
+For those, reporting a single `value` is not a summary, it is wrong: a host with two
+`ListenAddress` lines has two listening addresses.
 
-This is unresolved. The distinction matters: value *history* was rejected as noise, and
-rightly, but multiple *effective* values are not history - they are the setting. Any fix has to
-add the second without smuggling back the first.
+**Resolved in 1.7.0: `value` carries the list.**
+
+```yaml
+ListenAddress:
+  value: ["10.0.0.1", "10.0.0.2"]   # all of them, all in force
+  cumulative: true
+  location: /etc/ssh/sshd_config
+  appearance: [/etc/ssh/sshd_config]
+```
+
+There is one field for the setting either way - a string when the directive is shadowed, a list
+when it is cumulative - and the `cumulative` flag, present only on the latter, says which to
+expect. A second field holding "the other values" was rejected: two fields for one setting is
+ambiguous, and the reader has to work out which one is authoritative.
+
+The type follows the flag and **not the count**. A cumulative directive written once still
+yields a one-item list, so a caller never has to handle both shapes for the same directive.
+
+This is not value history returning by another route. The distinction is whether the extra
+values are *in force*: for a shadowed directive the later ones do nothing and are not recorded,
+and `appearance` remains the only trace of where they were written.
