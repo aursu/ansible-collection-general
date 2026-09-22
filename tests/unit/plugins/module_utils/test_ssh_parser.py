@@ -174,3 +174,47 @@ class TestSshConfigParser(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestMalformedMatch:
+    """`Match` with no condition. sshd rejects it outright:
+
+        sshd -t: line 1: no argument after keyword "Match"
+
+    The parser used to take the empty value as a scope name, silently creating a
+    scope called "" and filing every following option under it. A configuration
+    sshd refuses to load should not parse into something plausible-looking.
+    """
+
+    def test_bare_match_is_recorded_as_an_error(self, tmp_path):
+        cfg = tmp_path / "sshd_config"
+        cfg.write_text("Port 22\nMatch\nX11Forwarding yes\n", encoding="utf-8")
+        parser = SshConfigParser(base_dir=str(tmp_path))
+        parser.parse(str(cfg), "global")
+        assert any("Match" in e["reason"] for e in parser.errors)
+
+    def test_bare_match_creates_no_empty_scope(self, tmp_path):
+        cfg = tmp_path / "sshd_config"
+        cfg.write_text("Port 22\nMatch\nX11Forwarding yes\n", encoding="utf-8")
+        parser = SshConfigParser(base_dir=str(tmp_path))
+        parser.parse(str(cfg), "global")
+        assert "" not in parser.registry, "an empty scope name must never be created"
+
+
+class TestParseReturnValue:
+    """parse() reports whether it got through cleanly, so a caller need not
+    introspect .errors to find out."""
+
+    def test_true_on_a_clean_parse(self, tmp_path):
+        cfg = tmp_path / "sshd_config"
+        cfg.write_text("Port 22\n", encoding="utf-8")
+        assert SshConfigParser(base_dir=str(tmp_path)).parse(str(cfg), "global") is True
+
+    def test_false_when_the_file_is_missing(self, tmp_path):
+        assert SshConfigParser(base_dir=str(tmp_path)).parse(
+            str(tmp_path / "nope"), "global") is False
+
+    def test_false_when_a_line_cannot_be_parsed(self, tmp_path):
+        cfg = tmp_path / "sshd_config"
+        cfg.write_text('Port 22\nBanner "/etc/unclosed\n', encoding="utf-8")
+        assert SshConfigParser(base_dir=str(tmp_path)).parse(str(cfg), "global") is False

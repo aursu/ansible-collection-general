@@ -108,6 +108,10 @@ def split_directive(line):
     ('PermitRootLogin', 'prohibit-password')
     >>> split_directive("MaxAuthTries = 5")
     ('MaxAuthTries', '5')
+    >>> split_directive("MaxAuthTries =5")
+    ('MaxAuthTries', '5')
+    >>> split_directive("SetEnv FOO=bar")
+    ('SetEnv', 'FOO=bar')
     >>> split_directive("AllowUsers alice bob")
     ('AllowUsers', 'alice bob')
     >>> split_directive("Subsystem sftp /usr/libexec/openssh/sftp-server")
@@ -136,6 +140,13 @@ def split_directive(line):
         key, _, first = key.partition(SEPARATOR)
         if first:
             rest = [first] + rest
+
+    # "Key =Value" lexes to two tokens with the separator leading the second.
+    # Without this the value keeps a stray "=" on the front - a value sshd never
+    # saw, since it accepts this spelling and reads it as "Value".
+    elif rest and rest[0].startswith(SEPARATOR):
+        first = rest[0][len(SEPARATOR):]
+        rest = ([first] + rest[1:]) if first else rest[1:]
 
     if not key:
         return None, None
@@ -273,7 +284,12 @@ class SshConfigParser:
         Recursive configuration parser.
         current_scope: context inherited from parent file (for Include directives).
         call_stack: list of files currently being parsed (to prevent loops A->B->A).
+        Returns True when this file and everything it included parsed without
+        adding an error, so a caller can check the outcome without inspecting
+        .errors itself. Nested calls share that list, which is why the count is
+        compared rather than the list being emptied.
         """
+        initial_error_count = len(self.errors)
         abs_path = os.path.abspath(filepath)
 
         if depth > MAX_INCLUDE_DEPTH:
@@ -281,7 +297,7 @@ class SshConfigParser:
                 abs_path,
                 "include depth exceeded %d; not parsed" % MAX_INCLUDE_DEPTH,
             )
-            return
+            return False
 
         if call_stack is None:
             call_stack = set()
@@ -289,17 +305,17 @@ class SshConfigParser:
         # Loop protection (stack-based)
         if abs_path in call_stack:
             self._record_error(abs_path, "include loop; already being parsed")
-            return
+            return False
 
         # FIXED: Removed 'self.processed_files' check.
         # Files MUST be re-parsed if they are included in different contexts/scopes.
         if not os.path.exists(abs_path):
             self._record_error(abs_path, "does not exist")
-            return
+            return False
 
         if not os.path.isfile(abs_path):
             self._record_error(abs_path, "not a regular file")
-            return
+            return False
 
         new_stack = call_stack.copy()
         new_stack.add(abs_path)
@@ -313,7 +329,7 @@ class SshConfigParser:
             # unprivileged user must not look like a configuration with fewer
             # options in it.
             self._record_error(abs_path, "could not be read: %s" % exc)
-            return
+            return False
 
         if abs_path not in self.parsed_files:
             self.parsed_files.append(abs_path)
@@ -339,6 +355,16 @@ class SshConfigParser:
                 self._handle_include(value, local_scope, depth, new_stack)
 
             elif key.lower() == "match":
+                # A Match with no condition is not a scope, it is a broken file.
+                # sshd refuses to load it - `no argument after keyword "Match"` -
+                # so accepting it here would file every following option under a
+                # scope named "", which reads as plausible and is not.
+                if not value:
+                    self._record_error(
+                        abs_path,
+                        "line %d: Match with no condition; sshd rejects this" % lineno)
+                    continue
+
                 # Switch context within the current file
                 # Special handling for 'Match All' -> resets to global
                 if value.lower() == "all":
@@ -355,6 +381,8 @@ class SshConfigParser:
         # Upon function exit (EOF), local_scope is destroyed.
         # Control returns to the caller with its own local_scope version.
         # This emulates Match block closure at end of file.
+
+        return len(self.errors) == initial_error_count
 
     def _handle_include(self, pattern, active_scope, depth, call_stack):
         if not os.path.isabs(pattern):

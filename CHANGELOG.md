@@ -4,6 +4,41 @@ All notable changes to `aursu.general` are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-09-22
+
+### Fixed
+
+- **`Key =Value` left a stray separator on the value.** sshd accepts all four spellings of a
+  directive, verified against OpenSSH 9.6p1 - `Key Value`, `Key=Value`, `Key = Value` and
+  `Key =Value`. The parser handled the first three and returned `('MaxAuthTries', '=5')` for the
+  fourth, reporting a value sshd never saw.
+
+- **`Match` with no condition was accepted as a scope.** sshd refuses to load such a file -
+  `no argument after keyword "Match"` - while the parser took the empty value as a scope name,
+  silently creating a scope called `""` and filing every following option under it. A
+  configuration sshd rejects should not parse into something plausible-looking. It is now recorded
+  as an error and the line is skipped.
+
+### Added
+
+- **`parse()` returns a boolean**, true when the file and everything it included parsed without
+  adding an error. Callers no longer have to inspect `.errors` to find out. Nested calls share
+  that list, so the count is compared rather than the list emptied.
+
+### Not done, deliberately
+
+A review proposed two further changes that were measured and rejected.
+
+A *fast path* skipping `shlex` for lines without quotes, by replacing the first `=` with a space.
+That corrupts any value legitimately containing `=`: `SetEnv FOO=bar` becomes `SetEnv FOO bar`,
+and `AuthorizedKeysCommand /usr/bin/x --base=dc=example` loses its first `=` too. sshd accepts
+those lines. A regression test now guards this.
+
+Shadow `set()` objects beside `appearance` and `parsed_files` for O(1) lookups. Both lists hold
+single-digit numbers of file paths; the saving is unmeasurable and the cost is two structures per
+option that must stay in sync. The stated justification - Python 2.7 dict ordering - does not
+apply: this collection declares `requires_ansible: '>=2.15.0'` and already uses f-strings.
+
 ## [1.7.0] - 2026-09-15
 
 `sshd_info` and `ssh_parser` shipped in 1.5.0 with faults that all pointed the same way: the

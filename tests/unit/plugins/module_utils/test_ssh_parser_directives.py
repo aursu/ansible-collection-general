@@ -221,3 +221,34 @@ class TestDiagnostics:
     def test_a_clean_parse_reports_no_errors(self, tmp_path):
         parser, _ = parse(tmp_path, "Port 22\nPermitRootLogin no\n")
         assert parser.errors == []
+
+
+class TestAsymmetricSeparator:
+    """`Key =Value` - the separator attached to the value rather than the key.
+
+    sshd accepts all four spellings; verified against OpenSSH 9.6p1, where a file
+    containing only `MaxAuthTries =5` passes `sshd -t`. Three of the four already
+    worked; this is the one that did not, and it left a stray '=' on the front of
+    the value - so the parser reported a value sshd never saw.
+    """
+
+    def test_separator_attached_to_the_value(self):
+        assert split_directive("MaxAuthTries =5") == ("MaxAuthTries", "5")
+
+    def test_separator_attached_to_the_key(self):
+        assert split_directive("MaxAuthTries= 5") == ("MaxAuthTries", "5")
+
+    def test_all_four_spellings_agree(self):
+        forms = ["MaxAuthTries 5", "MaxAuthTries=5", "MaxAuthTries = 5",
+                 "MaxAuthTries =5", "MaxAuthTries= 5"]
+        assert {split_directive(f) for f in forms} == {("MaxAuthTries", "5")}
+
+    def test_an_equals_inside_a_value_is_preserved(self):
+        """The regression guard. A value may legitimately contain '=' - SetEnv is
+        the obvious case, and sshd accepts `SetEnv FOO=bar`. Any 'optimisation'
+        that replaces the first '=' anywhere on the line corrupts these."""
+        assert split_directive("SetEnv FOO=bar") == ("SetEnv", "FOO=bar")
+        assert split_directive("SetEnv LANG=en_US.UTF-8 TZ=UTC") == (
+            "SetEnv", "LANG=en_US.UTF-8 TZ=UTC")
+        assert split_directive("AuthorizedKeysCommand /usr/bin/x --base=dc=example") == (
+            "AuthorizedKeysCommand", "/usr/bin/x --base=dc=example")
