@@ -59,7 +59,7 @@ jobs:
           ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
         run: |
           set -e
-          for m in dev_info fstab_info lvm_info sshd_info; do
+          for m in dev_info fstab_info kernel_info lvm_info sshd_info; do
             echo "--- aursu.general.${m} ---"
             ansible-doc "aursu.general.${m}" >/dev/null
             echo "    OK"
