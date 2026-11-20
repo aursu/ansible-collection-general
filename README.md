@@ -273,6 +273,30 @@ installed_kernels:
     ...
 ```
 
+## Filters: package specifications
+
+`aursu.general.validate_package_names` and `aursu.general.validate_package_pins` decide
+what a valid package specification is, for every collection that installs packages. Both
+return `true` or fail the task with a message naming the variable and the offending entry.
+
+| Filter | Accepts |
+|---|---|
+| `validate_package_names` | a package name or a list of names, each a non-empty string; an empty list is valid |
+| `validate_package_pins` | a non-empty map of package name to exact version, each version a non-empty string |
+
+An unquoted version in YAML is a number - `0.39` stays a float, `1.10` becomes `1.1` - and an
+empty value is null; `validate_package_pins` refuses both, naming the package:
+
+```yaml
+- ansible.builtin.assert:
+    that: docker_packages | aursu.general.validate_package_pins('docker_packages')
+    quiet: true
+# 'docker_packages['docker-buildx-plugin']' must be an exact version string, got 0.39. Quote it in YAML.
+```
+
+The rules live in `plugins/plugin_utils/packages.py` (`PackageNames`, `PackagePins`), so other
+collections' controller-side plugins import the same classes instead of keeping a copy.
+
 ## aursu.general.sshd_info
 
 Parses an OpenSSH **server** configuration recursively, following `Include` directives, and
