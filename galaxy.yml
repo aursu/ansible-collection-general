@@ -70,6 +70,8 @@ build_ignore:
   # for anyone installing the collection.
   - .github
   - docker-compose.yml
+  # Per-change development notes: the reasoning behind the code, for its maintainers.
+  - notes
 
 # A dict controlling use of manifest directives used in building the collection artifact. The key 'directives' is a
 # list of MANIFEST.in style
