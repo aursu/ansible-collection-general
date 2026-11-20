@@ -4,6 +4,16 @@ All notable changes to `aursu.general` are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-11-20
+
+### Added
+
+- **Filter `validate_mount_point`** (`plugins/plugin_utils/mounts.py`, `MountTable`): requires a
+  directory to be a mount point of its own, from `ansible_facts.mounts`; on failure names the
+  mount that holds the path and its device. Prefixes compare by path component; of two entries for
+  one mount point the later wins. Replaces a `selectattr | list | length == 1` chain in
+  `home-manage`. 10 tests.
+
 ## [1.9.0] - 2026-11-20
 
 ### Added
@@ -244,6 +254,7 @@ made without a git tag, and without the `galaxy.yml` bump being committed.
 Baseline for this changelog; this and earlier releases are recorded in the git
 history and on Galaxy only.
 
+[1.10.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.10.0
 [1.9.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.9.0
 [1.8.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.8.0
 [1.7.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.7.0

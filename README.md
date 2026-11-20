@@ -297,6 +297,13 @@ empty value is null; `validate_package_pins` refuses both, naming the package:
 The rules live in `plugins/plugin_utils/packages.py` (`PackageNames`, `PackagePins`), so other
 collections' controller-side plugins import the same classes instead of keeping a copy.
 
+## Filter: mount point
+
+`ansible_facts.mounts | aursu.general.validate_mount_point('/var/lib/docker')` returns `true`
+when the path is a mount point of its own; otherwise it fails naming the mount that holds the
+path, e.g. `/srv is not a mount point: it is on / (/dev/nvme0n1p3).` Logic in
+`plugins/plugin_utils/mounts.py`.
+
 ## aursu.general.sshd_info
 
 Parses an OpenSSH **server** configuration recursively, following `Include` directives, and
