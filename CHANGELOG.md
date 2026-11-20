@@ -4,6 +4,24 @@ All notable changes to `aursu.general` are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-11-20
+
+### Added
+
+- **Filters `validate_package_names` and `validate_package_pins`** - one rule for what a valid
+  package specification is, shared by the collections that install packages. Names: a name or
+  a list of non-empty names. Pins: a non-empty map of name to exact version, each a non-empty
+  string; an unquoted YAML version (`0.39` a float, `1.10` read as `1.1`) or null is refused,
+  and the message names the package. Both return `true` or fail the task.
+
+- **`plugins/plugin_utils/packages.py`** (`PackageNames`, `PackagePins`) - the rules behind
+  the filters, importable by other collections' controller-side plugins. Replaces a Jinja chain
+  in `aursu.dockerinstall` (`values() | select('string') | select | list | length == …`) that
+  could not name the offending package, and a private copy in `aursu.lvm_setup`'s
+  `RequiredPackages`.
+
+- 21 tests.
+
 ## [1.8.0] - 2026-11-20
 
 ### Added
@@ -226,6 +244,7 @@ made without a git tag, and without the `galaxy.yml` bump being committed.
 Baseline for this changelog; this and earlier releases are recorded in the git
 history and on Galaxy only.
 
+[1.9.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.9.0
 [1.8.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.8.0
 [1.7.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.7.0
 [1.6.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.6.0
