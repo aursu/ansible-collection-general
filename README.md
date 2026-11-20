@@ -241,6 +241,38 @@ that are broken.
       - "'nofail' in fstab.entry.options"
 ```
 
+## aursu.general.kernel_info
+
+Lists the installed kernels: every package carrying a kernel's ABI version, whether it is
+running, whether it is the newest, and its footprint in `/boot`. Debian and Ubuntu (dpkg) for
+now. The inventory code lives in `plugins/module_utils/kernels.py`, so a module that removes
+kernels can read the same state itself at the moment it acts.
+
+Packages are grouped by the ABI version in their names, not by known prefixes: kernel 7.0 on
+Ubuntu 24.04 brings `linux-main-modules-zfs-7.0.0-43-generic` and drops
+`linux-modules-extra-*`, which a prefix list written for 6.17 would get wrong.
+
+```yaml
+- aursu.general.kernel_info:
+  register: kernels
+```
+
+```yaml
+running_release: 7.0.0-43-generic
+installed_kernels:
+  - version: 6.17.0-35
+    releases: [6.17.0-35-generic]
+    packages: [linux-headers-6.17.0-35-generic, linux-hwe-6.17-headers-6.17.0-35, ...]
+    running: false
+    latest: false
+    boot_bytes: 109135000
+  - version: 7.0.0-43
+    releases: [7.0.0-43-generic]
+    running: true
+    latest: true
+    ...
+```
+
 ## aursu.general.sshd_info
 
 Parses an OpenSSH **server** configuration recursively, following `Include` directives, and

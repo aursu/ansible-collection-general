@@ -4,6 +4,30 @@ All notable changes to `aursu.general` are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-11-20
+
+### Added
+
+- **`kernel_info`** - the installed kernels, each with every package carrying its ABI version,
+  its bootable releases (as `uname -r` reports them), whether it is running, whether it is the
+  newest, and its footprint in `/boot`. Read-only. Debian and Ubuntu; RPM-based systems later.
+
+  Packages are grouped by the ABI version in their names rather than by known prefixes. Measured
+  on Ubuntu 24.04 HWE: the 7.0 series adds `linux-main-modules-zfs-*` and
+  `linux-main-modules-v4l2loopback-*` and drops `linux-modules-extra-*`, so a prefix list written
+  for 6.17 would miss packages on the next kernel. Only packages with files on disk count: `un`
+  (not installed) and `rc` (configuration files only) are skipped, a half-configured `iF` is kept.
+
+- **`plugins/module_utils/kernels.py`** - the inventory behind it, shared so that a module which
+  removes kernels reads the current state itself at the moment it acts
+  (`docs/design/collection-boundaries.md`), instead of taking `kernel_info`'s output through a
+  play. `dpkg-query` exits 1 with no output when nothing matches `linux-*` (measured); that is an
+  empty inventory, not a failure.
+
+- Tests: 14 for the inventory on real `dpkg-query` output from an Ubuntu 24.04 host with four
+  kernels across two series (`tests/unit/plugins/module_utils/fixtures/`), 3 for the module.
+  `kernel_info` is added to the CI `ansible-doc` check.
+
 ## [1.7.1] - 2026-09-22
 
 ### Fixed
@@ -202,6 +226,7 @@ made without a git tag, and without the `galaxy.yml` bump being committed.
 Baseline for this changelog; this and earlier releases are recorded in the git
 history and on Galaxy only.
 
+[1.8.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.8.0
 [1.7.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.7.0
 [1.6.0]: https://github.com/aursu/ansible-collection-general/releases/tag/v1.6.0
 [1.5.0]: https://galaxy.ansible.com/ui/repo/published/aursu/general/
